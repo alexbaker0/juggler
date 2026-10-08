@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b1020">
+<title>The Juggler</title>
+<style>
+  :root {
+    --bg: #0b1020; --panel: #161d31; --edge: #2a3554; --text: #e8edf6; --muted: #93a0bd;
+    --accent: #ff8a3d; --ok: #57d18a;
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0; min-height: 100dvh; background: var(--bg); color: var(--text);
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    display: flex; flex-direction: column; align-items: center; gap: 14px;
+    padding: max(16px, env(safe-area-inset-top)) 14px max(24px, env(safe-area-inset-bottom));
+  }
+  .back { align-self: flex-start; color: var(--muted); font-size: .85rem; text-decoration: none; }
+  .back:hover { color: var(--text); }
+  h1 { font-size: clamp(1.2rem, 5vw, 1.5rem); margin: 0; font-weight: 650; text-align: center; }
+  h1 span { color: var(--accent); }
+  .sub { color: var(--muted); font-size: .9rem; margin: -6px 0 0; text-align: center; }
+
+  .frame {
+    width: min(94vw, 1024px); aspect-ratio: 4 / 3; background: #000;
+    border: 1px solid var(--edge); border-radius: 10px; overflow: hidden; position: relative;
+    box-shadow: 0 14px 40px rgba(0,0,0,.45);
+  }
+  canvas { width: 100%; height: 100%; display: block; image-rendering: auto; }
+  canvas.pixelated { image-rendering: pixelated; }
+  .scan { position: absolute; left: 0; right: 0; height: 2px; background: var(--accent);
+    box-shadow: 0 0 8px var(--accent); opacity: .8; pointer-events: none; display: none; }
+
+  .status { font-size: .95rem; font-weight: 600; text-align: center; min-height: 1.4em; }
+  .status .ok { color: var(--ok); }
+  .bar { width: min(94vw, 1024px); height: 4px; background: var(--panel); border-radius: 2px; overflow: hidden; }
+  .bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .1s linear; }
+
+  .controls {
+    display: flex; gap: 12px 18px; align-items: center; flex-wrap: wrap; justify-content: center;
+    background: var(--panel); padding: 12px 14px; border-radius: 12px; width: min(94vw, 1024px);
+  }
+  .field { display: flex; align-items: center; gap: 8px; }
+  .field label { font-size: .8rem; color: var(--muted); white-space: nowrap; }
+  .field output { font-variant-numeric: tabular-nums; font-size: .85rem; min-width: 3.5em; }
+  input[type=range] { width: 160px; accent-color: var(--accent); }
+  select, button {
+    font: inherit; font-size: .95rem; background: #222c46; color: var(--text);
+    border: 1px solid #344063; border-radius: 8px; padding: 10px 14px; min-height: 44px; cursor: pointer;
+  }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #1a1006; font-weight: 650; }
+  button:hover { filter: brightness(1.1); }
+  button:disabled { opacity: .5; cursor: default; filter: none; }
+
+  details { width: min(94vw, 1024px); background: var(--panel); border-radius: 12px; padding: 10px 14px; }
+  summary { cursor: pointer; font-weight: 600; font-size: .95rem; }
+  details p { color: var(--muted); font-size: .85rem; line-height: 1.5; }
+  textarea {
+    width: 100%; min-height: 300px; resize: vertical; background: #0e1424; color: var(--text);
+    border: 1px solid var(--edge); border-radius: 8px; padding: 10px;
+    font: 13px/1.45 ui-monospace, "Cascadia Mono", Consolas, monospace;
+  }
+  .err { color: #ff6b7c; font-size: .85rem; min-height: 1.2em; }
+  .about { max-width: 720px; color: var(--muted); font-size: .88rem; line-height: 1.6; margin: 0; }
+  .about b { color: var(--text); font-weight: 600; }
+  @media (max-width: 520px) {
+    .controls { flex-direction: column; align-items: stretch; }
+    .field { justify-content: space-between; }
+    input[type=range] { flex: 1; width: auto; }
+  }
+</style>
+</head>
+<body>
+  <a class="back" href="/">← Alex's Lab</a>
+  <h1>The <span>Juggler</span></h1>
+  <p class="sub">Eric Graham's 1986 Amiga ray tracer, rendering live in your browser</p>
+
+  <div class="frame"><canvas id="cv" width="1024" height="768"></canvas><div class="scan" id="scan"></div></div>
+  <div class="bar"><i id="bar"></i></div>
+  <div class="status" id="status">Loading…</div>
+
+  <div class="controls">
+    <div class="field"><label for="res">Resolution</label>
+      <select id="res">
+        <option value="320">320 × 240</option>
+        <option value="640">640 × 480</option>
+        <option value="1024" selected>1024 × 768</option>
+      </select>
+    </div>
+    <div class="field"><label for="aa">Anti-aliasing</label>
+      <select id="aa">
+        <option value="1">Off</option>
+        <option value="2">2 × 2</option>
+        <option value="3" selected>3 × 3</option>
+      </select>
+    </div>
+    <div class="field"><label for="orbit">Orbit</label>
+      <input type="range" id="orbit" min="-180" max="180" step="5" value="0"><output id="orbitv">0°</output>
+    </div>
+    <button class="primary" id="render">Render</button>
+    <button id="save" disabled>Save PNG</button>
+  </div>
+
+  <details id="editor">
+    <summary>Edit the scene file</summary>
+    <p>This is Eric Graham's original <code>robot.dat</code>. Line 1 is the eye position, then
+      <code>[altitude, azimuth]</code> in degrees and a lens factor. Each object is
+      <code>&lt;r,g,b&gt; type (x,y,z):radius</code>, where type 0 = dull, 1 = shiny, 2 = mirror.
+      <code>n (x,y,z):r</code> sweeps n spheres to a new point, which is how the limbs are built.
+      Then the lamps, and five colours: two floor tiles, ambient light, and sky zenith and horizon.
+      Z is up; the floor is z = 0.</p>
+    <textarea id="scene" spellcheck="false"></textarea>
+    <div class="err" id="err"></div>
+    <button id="resetScene">Restore original scene</button>
+  </details>
+
+  <p class="about">In 1986 Eric Graham wrote a ray tracer for the Commodore Amiga and used it to make
+    <b>The Juggler</b>, a short looping animation of a robot juggling mirrored balls. It became one of the
+    most famous early computer graphics demos. Each frame reportedly took around an hour to render.
+    This is his original engine (RT1.C) and scene file, ported to C on the PC with one bug fix to the
+    reflection maths, then compiled to WebAssembly. The image is split across your processor cores and
+    drawn line by line, as the Amiga did. At the default settings the result matches the native PC build pixel for pixel.</p>
+
+<script src="scene.js"></script>
+<script>
+const cv = document.getElementById("cv"), ctx = cv.getContext("2d");
+const statusEl = document.getElementById("status"), barEl = document.getElementById("bar");
+const scanEl = document.getElementById("scan"), errEl = document.getElementById("err");
+const sceneEl = document.getElementById("scene"), orbitEl = document.getElementById("orbit");
+const renderBtn = document.getElementById("render"), saveBtn = document.getElementById("save");
+
+let wasmModule = null, originalScene = "", workers = [], renderId = 0;
+const cores = Math.max(1, Math.min(navigator.hardwareConcurrency || 4, 12));
+
+orbitEl.addEventListener("input", () => { document.getElementById("orbitv").textContent = orbitEl.value + "°"; });
+
+// Orbit = rotate the whole camera (eye + view direction) about the vertical axis
+// through the origin, where the Juggler stands.
+function orbitCamera(scene, deg) {
+  const t = deg * Math.PI / 180, [x, y, z] = scene.eye;
+  return { eye: [x * Math.cos(t) - y * Math.sin(t), x * Math.sin(t) + y * Math.cos(t), z], az: scene.az + deg };
+}
+
+function render() {
+  let scene;
+  try { scene = parseScene(sceneEl.value); errEl.textContent = ""; }
+  catch (e) { errEl.textContent = "Scene error: " + e.message; document.getElementById("editor").open = true; return; }
+
+  const id = ++renderId;
+  workers.forEach(w => w.terminate());
+  const nx = Number(document.getElementById("res").value), ny = nx * 3 / 4;
+  const aa = Number(document.getElementById("aa").value);
+  const deg = Number(orbitEl.value);
+  const cam = deg ? orbitCamera(scene, deg) : { eye: null, az: scene.az };
+
+  cv.width = nx; cv.height = ny;
+  cv.classList.toggle("pixelated", nx <= 320);
+  ctx.fillStyle = "#000"; ctx.fillRect(0, 0, nx, ny);
+  saveBtn.disabled = true;
+  scanEl.style.display = "block";
+
+  const n = Math.min(cores, ny);
+  let rowsDone = 0, workersDone = 0, nextRow = 0;
+  const t0 = performance.now();
+  statusEl.textContent = `Rendering ${nx} × ${ny} on ${n} core${n > 1 ? "s" : ""}…`;
+
+  // Rows are dealt out round-robin, so the picture fills from the top down.
+  workers = Array.from({ length: n }, (_, k) => {
+    const w = new Worker("worker.js");
+    const rows = [];
+    for (let j = k; j < ny; j += n) rows.push(j);
+    w.onmessage = ({ data }) => {
+      if (id !== renderId) return;
+      if (data.done) {
+        if (++workersDone === n) finish();
+        return;
+      }
+      ctx.putImageData(new ImageData(new Uint8ClampedArray(data.pixels.buffer), nx, 1), 0, data.j);
+      rowsDone++;
+      if (data.j >= nextRow) { nextRow = data.j; scanEl.style.top = (100 * (data.j + 1) / ny) + "%"; }
+      barEl.style.width = (100 * rowsDone / ny) + "%";
+    };
+    w.onerror = e => { statusEl.textContent = "Render failed: " + e.message; };
+    w.postMessage({ module: wasmModule, sceneText: sceneEl.value, nx, ny, aa, alt: scene.alt, az: cam.az, eye: cam.eye, rows });
+    return w;
+  });
+
+  function finish() {
+    const secs = (performance.now() - t0) / 1000;
+    scanEl.style.display = "none";
+    statusEl.innerHTML = `<span class="ok">Rendered ${nx} × ${ny}</span> with ${aa > 1 ? aa + "×" + aa + " anti-aliasing" : "no anti-aliasing"}`
+      + ` in ${secs.toFixed(1)} s on ${n} core${n > 1 ? "s" : ""}.`;
+    saveBtn.disabled = false;
+    workers.forEach(w => w.terminate()); workers = [];
+  }
+}
+
+saveBtn.addEventListener("click", () => {
+  cv.toBlob(b => {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(b); a.download = "juggler.png"; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  });
+});
+renderBtn.addEventListener("click", render);
+document.getElementById("resetScene").addEventListener("click", () => { sceneEl.value = originalScene; errEl.textContent = ""; });
+
+Promise.all([
+  fetch("rt.wasm").then(r => r.arrayBuffer()).then(b => WebAssembly.compile(b)),
+  fetch("robot.dat").then(r => r.text()),
+]).then(([mod, text]) => {
+  wasmModule = mod; originalScene = sceneEl.value = text;
+  render();
+}).catch(e => { statusEl.textContent = "Couldn't load the ray tracer: " + e.message; });
+</script>
+</body>
+</html>
